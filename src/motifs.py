@@ -1,9 +1,12 @@
 import numpy as np
 
-def trans_motifs(signal):
+def trans_motifs(signal: np.ndarray) -> np.ndarray:
+
     """
     Transforma o sinal contínuo em motifs (ordem 3),
-    conforme a implementação original de motif-synchronization.
+    conforme a implementação original de motif-synchronization
+    (Rosário et al., 2015).
+
 
     Parameters
     ----------

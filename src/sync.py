@@ -5,6 +5,10 @@ def motif_sync_pair(mot_i, mot_j, max_lag):
     Calcula a sincronização por motifs entre dois canais,
     considerando atraso temporal (lag).
 
+    Implementa o núcleo do método de motif-synchronization
+    descrito em Rosário et al. (2015), retornando o grau
+    máximo de coincidência entre motifs.
+    
     Parameters
     ----------
     mot_i, mot_j : np.ndarray
@@ -34,32 +38,5 @@ def motif_sync_pair(mot_i, mot_j, max_lag):
 
     return best_sync
 
-def motif_connectivity_matrix(motifs, max_lag):
-    """
-    Calcula a matriz de conectividade funcional baseada
-    em motif-synchronization com lag.
-
-    Parameters
-    ----------
-    motifs : np.ndarray
-        Array (n_channels, n_timepoints)
-    max_lag : int
-        Atraso máximo em amostras
-
-    Returns
-    -------
-    C : np.ndarray
-        Matriz de conectividade (n_channels x n_channels)
-    """
-
-    n_channels = motifs.shape[0]
-    C = np.zeros((n_channels, n_channels))
-
-    for i in range(n_channels):
-        for j in range(i + 1, n_channels):
-            sync = motif_sync_pair(motifs[i], motifs[j], max_lag)
-            C[i, j] = C[j, i] = sync
-
-    return C
 
 
