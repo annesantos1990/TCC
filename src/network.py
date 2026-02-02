@@ -40,8 +40,16 @@ def graph_metrics(adj: np.ndarray) -> dict:
     metrics["global_efficiency"] = nx.global_efficiency(G)
 
     # Eficiência local (vetor)
-    metrics["local_efficiency"] = np.array(
-        list(nx.local_efficiency(G).values())
-    )
+    eff = []
+
+    for node in G.nodes():
+        neighbors = list(G.neighbors(node))
+
+        if len(neighbors) < 2:
+            eff.append(0.0)
+        else:
+            subgraph = G.subgraph(neighbors)
+            eff.append(nx.global_efficiency(subgraph))
+    metrics["local_efficiency"] = np.array(eff)
 
     return metrics

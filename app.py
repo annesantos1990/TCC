@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.graph_objects as go
 
+
 from src.motifs import trans_motifs
 from src.tvg import build_tvg
 from src.aggregate import (
@@ -39,7 +40,6 @@ run_button = st.sidebar.button("Rodar análise")
 # LOAD + PROCESS
 # ==========================
 
-import numpy as np
 
 def mean_edge_weight_per_time(tvg):
     mean_weights = []
@@ -154,9 +154,7 @@ if run_button:
     
     tvg = compute_tvg(motifs, window_size, max_lag)
 
-
     st.subheader("Time-Varying Graph (TVG)")
-
 
     st.write(f"TVG shape: {tvg.shape}")
 
