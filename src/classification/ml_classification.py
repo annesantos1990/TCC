@@ -15,16 +15,37 @@ from sklearn.metrics import accuracy_score, roc_auc_score
 
 DATASET_PATH = "data/processed/dataset_features.parquet"
 
-df = pd.read_parquet(DATASET_PATH)
+df_dataset = pd.read_parquet(DATASET_PATH)
 
-df = df[df["condition"].isin(["EO", "EC"])]
+df_dataset = df_dataset[df_dataset["condition"].isin(["EO", "EC"])]
 
-df["y"] = df["condition"].map({"EO": 0, "EC": 1})
+df_dataset["y"] = df_dataset["condition"].map({"EO": 0, "EC": 1})
 
 NODE_FEATURES = [
-    c for c in df.columns
+    c for c in df_dataset.columns
     if c.startswith(("degree_", "clustering_", "betweenness_", "hub_"))
 ]
+
+df_dataset = df_dataset.rename(columns={
+    "Gender_ 1=female_2=male": "gender",
+    "Age": "age",
+    "Handedness": "handedness",
+    "Education": "education",
+    "DRUG_0=negative_1=Positive": "drug",
+    "Smoking_num_(Non-smoker=1, Occasional Smoker=2, Smoker=3)": "smoking",
+    "SKID_Diagnoses": "skid_diagnoses",
+    "SKID_Diagnoses 1": "skid_diagnoses_1",
+    "SKID_Diagnoses 2": "skid_diagnoses_2",
+    "Comments_SKID_assessment": "comments_skid_assessment",
+    "Hamilton_Scale": "hamilton_scale",
+    "BSL23_sumscore": "bsl23_sumscore",
+    "BSL23_behavior": "bsl23_behavior",
+    "AUDIT": "audit",
+    "Standard_Alcoholunits_Last_28days": "standard_alcoholunits_last_28days",
+    "Alcohol_Dependence_In_1st-3rd_Degree_relative": "alcohol_dependence_in_1st_3rd_degree_relative",
+    "Relationship_Status": "relationship_status"
+})
+
 
 META_FEATURES = ["age", "gender"]
 
@@ -60,8 +81,8 @@ def evaluate_model(X, y, model):
     }
 
 # Regressão Logística
-X = df[NODE_FEATURES].select_dtypes(include="number").dropna(axis=1)
-y = df["y"]
+X = df_dataset[NODE_FEATURES].select_dtypes(include="number").dropna(axis=1)
+y = df_dataset["y"]
 
 pipe_lr = Pipeline([
     ("scaler", StandardScaler()),
@@ -81,11 +102,11 @@ evaluate_model(X, y, pipe_pca_lr)
 
 # Regressão Logística com PCA e metadados
 X_meta = pd.concat(
-    [X, df[META_FEATURES]],
+    [X, df_dataset[META_FEATURES]],
     axis=1
 ).dropna()
 
-y_meta = df.loc[X_meta.index, "y"]
+y_meta = df_dataset.loc[X_meta.index, "y"]
 
 pipe_pca_meta = Pipeline([
     ("scaler", StandardScaler()),
