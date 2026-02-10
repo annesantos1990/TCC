@@ -1,3 +1,5 @@
+"""Código com a classificação de motifs"""
+
 import numpy as np
 
 def trans_motifs(signal: np.ndarray) -> np.ndarray:
