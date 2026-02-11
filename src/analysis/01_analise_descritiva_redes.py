@@ -29,7 +29,7 @@ df_healthy["age_group"] = df_healthy["age"].replace({
     "20-25": "young",
     "25-30": "young",
     "30-35": "young",
-    "35-40": "middle",
+    "35-40": "older",
     "55-60": "older",
     "60-65": "older",
     "65-70": "older",
@@ -46,12 +46,13 @@ df_healthy["clustering_mean"] = df_healthy[clustering_cols].mean(axis=1)
 df_healthy["efficiency_global"] = df_healthy[efficiency_cols].mean(axis=1)
 df_healthy["betweenness_mean"] = df_healthy[betweenness_cols].mean(axis=1)
 
-GRAPH_METRICS = [
-    "degree_mean",
-    "clustering_mean",  
-    "efficiency_global",
-    "betweenness_mean"
-]
+
+GRAPH_METRICS = {
+    "degree_mean": "Grau Médio",
+    "clustering_mean": "Coeficiente de Clustering Médio",
+    "betweenness_mean": "Centralidade de Intermediação Médio"
+}
+
 
 sample_summary = (
     df_healthy[["subject_id", "age_group", "gender"]]
@@ -63,46 +64,52 @@ sample_summary = (
 
 sample_summary
 
-df_healthy[["age_group", "gender"]].value_counts()
+df_healthy = (
+    df_healthy[df_healthy["condition"] != "E0"]
+    .rename(columns={"age_group": "Faixa Etária", "gender": "Gênero"})
+    .copy()
+)
+
+df_healthy[["Faixa Etária", "Gênero"]].value_counts()
 
 # Boxplot Age Group
-for metric in GRAPH_METRICS:
+for metric, label in GRAPH_METRICS.items():
     plt.figure(figsize=(6, 4))
     sns.boxplot(
         data=df_healthy,
-        x="age_group",
+        x="Faixa Etária",
         y=metric,
-        hue="age_group",
+        hue="Faixa Etária",
         legend=False
     )
-    plt.title(f"{metric} vs Age Group")
-    plt.xlabel("Age group")
-    plt.ylabel(metric)
+    plt.title(f"{label} vs Faixa Etária")
+    plt.xlabel("Faixa Etária")
+    plt.ylabel(label)
     plt.tight_layout()
     plt.show()
 
 # plotly
-for metric in GRAPH_METRICS:
+for metric, label in GRAPH_METRICS.items():
     fig = px.box(
         df_healthy,
-        x="age_group",
+        x="Faixa Etária",
         y=metric,
-        color="age_group",
-        title=f"{metric} vs Age Group",
+        color="Faixa Etária",
+        title=f"{label} vs Faixa Etária",
         labels={
-            "age_group": "Age group",
-            metric: metric
+            "Faixa Etária": "Faixa Etária",
+            metric: label
         }
     )
     fig.update_layout(
-        xaxis_title="Age group",
-        yaxis_title=metric,
-        title=f"{metric} vs Age Group"
+        xaxis_title="Faixa Etária",
+        yaxis_title=label,
+        title=f"{label} vs Faixa Etária"
     )
     fig.show()
 
 # Boxplot Condition
-for metric in GRAPH_METRICS:
+for metric, label in GRAPH_METRICS.items():
     plt.figure(figsize=(5, 4))
     sns.boxplot(
         data=df_healthy,
@@ -110,14 +117,14 @@ for metric in GRAPH_METRICS:
         y=metric,
         palette="Set1"
     )
-    plt.title(f"{metric}: EO vs EC")
+    plt.title(f"{label}: EO vs EC")
     plt.xlabel("Condition")
-    plt.ylabel(metric)
+    plt.ylabel(label)
     plt.tight_layout()
     plt.show()
 
 # Boxplot Age Group x Condition
-for metric in GRAPH_METRICS:
+for metric, label in GRAPH_METRICS.items():
     plt.figure(figsize=(7, 4))
     sns.boxplot(
         data=df_healthy,
@@ -126,9 +133,9 @@ for metric in GRAPH_METRICS:
         hue="condition",
         palette="Set1"
     )
-    plt.title(f"{metric}: EO vs EC stratified by age")
+    plt.title(f"{label}: EO vs EC stratified by age")
     plt.xlabel("Age group")
-    plt.ylabel(metric)
+    plt.ylabel(label)
     plt.legend(title="Condition")
     plt.tight_layout()
     plt.show()
@@ -139,7 +146,7 @@ df_healthy["age_ord"] = df_healthy["age_group"].map(age_ord_map)
 
 corr_results = []
 
-for metric in GRAPH_METRICS:
+for metric, label in GRAPH_METRICS.items():
     valid = df_healthy[[metric, "age_ord"]].dropna()
     r, p = spearmanr(valid["age_ord"], valid[metric])
     corr_results.append({
@@ -158,7 +165,7 @@ df_healthy["gender_bin"] = df_healthy["gender"].map({
 
 gender_results = []
 
-for metric in GRAPH_METRICS:
+for metric, label in GRAPH_METRICS.items():
     valid = df_healthy[[metric, "gender_bin"]].dropna()
     r, p = pointbiserialr(valid["gender_bin"], valid[metric])
     gender_results.append({

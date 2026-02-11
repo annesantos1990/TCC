@@ -3,16 +3,16 @@ import pandas as pd
 import mne
 from tqdm import tqdm
 
-from src.motifs import trans_motifs
-from src.tvg import build_tvg_parallel
-from src.aggregate import (
+from src.graph.motifs import trans_motifs
+from src.graph.tvg import build_tvg_parallel
+from src.graph.aggregate import (
     aggregate_static_network,
     edges_per_time,
     hub_occurrence,
     weighted_degree_static,
     temporal_statistics
 )
-from src.network import graph_metrics
+from src.graph.network import graph_metrics
 
 
 # ==========================
