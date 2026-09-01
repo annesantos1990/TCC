@@ -19,7 +19,7 @@ def trans_motifs(signal: np.ndarray) -> np.ndarray:
     -------
     motifs : np.ndarray
         Array (n_channels, n_samples - 2)
-        com valores inteiros {1,2,3,4,5}
+        com valores inteiros {1,2,3,4,5,6}
     """
 
     n_channels, n_samples = signal.shape
@@ -27,19 +27,32 @@ def trans_motifs(signal: np.ndarray) -> np.ndarray:
 
     for ch in range(n_channels):
         for t in range(2, n_samples):
-            last = signal[ch, t - 2]
-            blast = signal[ch, t - 1]
-            val = signal[ch, t]
+            x0 = signal[ch, t - 2]
+            x1 = signal[ch, t - 1]
+            x2 = signal[ch, t]
 
-            if last > blast and blast > val:
+            # M1
+            if x0 > x1 and x1 > x2 and x0 > x2:
                 motifs[ch, t - 2] = 1
-            elif last > blast and blast < val:
+
+            # M2
+            elif x0 > x1 and x1 < x2 and x0 > x2:
                 motifs[ch, t - 2] = 2
-            elif last < blast and blast > val:
+
+            # M3
+            elif x0 < x1 and x1 > x2 and x0 > x2:
                 motifs[ch, t - 2] = 3
-            elif last < blast and blast < val:
+
+            # M4
+            elif x0 > x1 and x1 < x2 and x0 < x2:
                 motifs[ch, t - 2] = 4
-            else:
+
+            # M5
+            elif x0 < x1 and x1 < x2 and x0 < x2:
                 motifs[ch, t - 2] = 5
+
+            # M6
+            elif x0 < x1 and x1 > x2 and x0 < x2:
+                motifs[ch, t - 2] = 6
 
     return motifs

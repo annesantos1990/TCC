@@ -4,6 +4,7 @@ import mne
 from tqdm import tqdm
 
 from src.graph.motifs import trans_motifs
+from src.graph.threshold import estimate_threshold
 from src.graph.tvg import build_tvg_parallel
 from src.graph.aggregate import (
     aggregate_static_network,
@@ -30,7 +31,9 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ==========================
 WINDOW_MS = 200
 MAX_LAG_MS = 50
-N_SEC = 5   # use None para sinal inteiro
+N_SEC = 5
+N_SURROGATES = 200
+THRESHOLD_PERCENTILE = 95.0
 
 
 def extract_features(file: Path):
@@ -43,7 +46,7 @@ def extract_features(file: Path):
         print(f" Pulando {out_file.name} (já existe)")
         return
 
-    raw = mne.io.read_raw_eeglab(file, preload=True, verbose=False)
+    raw = mne.io.read_raw_eeglab(file, preload=True, verbose=True)
     raw.pick_types(eeg=True)
 
     eeg = raw.get_data()
@@ -57,11 +60,26 @@ def extract_features(file: Path):
 
     motifs = trans_motifs(eeg)
 
+    threshold_info = estimate_threshold(
+        motifs,
+        window_size,
+        max_lag,
+        n_surrogates=N_SURROGATES,
+        percentile=THRESHOLD_PERCENTILE,
+    )
+    threshold = threshold_info["threshold"]
+    print(
+        f" Threshold estimado (p{THRESHOLD_PERCENTILE:.0f}): "
+        f"{threshold:.4f} "
+        f"(nulo: μ={threshold_info['null_mean']:.4f}, "
+        f"σ={threshold_info['null_std']:.4f})"
+    )
+
     tvg = build_tvg_parallel(
         motifs=motifs,
         window_size=window_size,
         max_lag=max_lag,
-        threshold=None
+        threshold=threshold,
     )
 
     # ==========================
@@ -97,6 +115,9 @@ def extract_features(file: Path):
         features[f"weighted_degree_{i}"] = v
 
     features["global_efficiency"] = net["global_efficiency"]
+    features["sync_threshold"] = threshold
+    features["sync_threshold_null_mean"] = threshold_info["null_mean"]
+    features["sync_threshold_null_std"] = threshold_info["null_std"]
     features["edges_mean"] = edges_stats["mean"]
     features["edges_std"] = edges_stats["std"]
     features["edges_cv"] = edges_stats["cv"]

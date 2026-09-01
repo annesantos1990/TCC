@@ -1,3 +1,6 @@
+import sys
+from pathlib import Path
+
 import streamlit as st
 import numpy as np
 import pandas as pd
@@ -6,9 +9,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import plotly.graph_objects as go
 
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.graph.motifs import trans_motifs
-from src.graph.tvg import build_tvg
+from src.graph.threshold import estimate_threshold
+from src.graph.tvg import build_tvg_parallel
 from src.graph.aggregate import (
     aggregate_static_network,
     edges_per_time,
@@ -19,6 +26,21 @@ from src.graph.aggregate import (
 
 st.set_page_config(layout="wide")
 st.title("EEG Functional Connectivity – Exploratory Analysis")
+
+if "sync_threshold" not in st.session_state:
+    st.session_state.sync_threshold = 0.0
+if "threshold_info" not in st.session_state:
+    st.session_state.threshold_info = None
+
+
+@st.cache_data(show_spinner=False)
+def load_eeg_segment(eeg_file: str, n_sec: float):
+    raw = mne.io.read_raw_eeglab(eeg_file, preload=True, verbose=False)
+    raw.pick_types(eeg=True)
+    eeg = raw.get_data()
+    sfreq = raw.info["sfreq"]
+    eeg = eeg[:, :int(n_sec * sfreq)]
+    return eeg, sfreq, list(raw.info["ch_names"])
 
 # ==========================
 # SIDEBAR
@@ -33,6 +55,47 @@ eeg_file = st.sidebar.text_input(
 
 window_ms = st.sidebar.slider("Janela (ms)", 100, 500, 200, 50)
 max_lag_ms = st.sidebar.slider("Lag máximo (ms)", 10, 100, 50, 10)
+n_sec = st.sidebar.slider("Duração (s)", 1, 30, 5)
+
+st.sidebar.header("Threshold")
+
+n_surrogates = st.sidebar.slider("Surrogates", 50, 1000, 200, 50)
+percentile = st.sidebar.slider("Percentil (%)", 90, 99, 95)
+
+if st.sidebar.button("Estimar threshold (surrogate)"):
+    with st.spinner("Estimando threshold por aleatorização..."):
+        eeg_est, sfreq_est, _ = load_eeg_segment(eeg_file, n_sec)
+        window_size_est = int(window_ms / 1000 * sfreq_est)
+        max_lag_est = int(max_lag_ms / 1000 * sfreq_est)
+        motifs_est = trans_motifs(eeg_est)
+        info = estimate_threshold(
+            motifs_est,
+            window_size_est,
+            max_lag_est,
+            n_surrogates=n_surrogates,
+            percentile=float(percentile),
+        )
+        st.session_state.sync_threshold = info["threshold"]
+        st.session_state.threshold_info = info
+
+if st.session_state.threshold_info:
+    info = st.session_state.threshold_info
+    st.sidebar.metric("Estimado (surrogate)", f"{info['threshold']:.4f}")
+    st.sidebar.caption(
+        f"Nulo: μ={info['null_mean']:.4f}, σ={info['null_std']:.4f} "
+        f"(p{info['percentile']:.0f}, n={info['n_surrogates']})"
+    )
+
+sync_threshold = st.sidebar.number_input(
+    "Threshold de sincronização",
+    min_value=0.0,
+    max_value=1.0,
+    value=float(st.session_state.sync_threshold),
+    step=0.01,
+    format="%.4f",
+    help="Valor usado na binarização do TVG. Ajuste manualmente ou estime acima.",
+)
+st.session_state.sync_threshold = sync_threshold
 
 run_button = st.sidebar.button("Rodar análise")
 
@@ -40,26 +103,10 @@ run_button = st.sidebar.button("Rodar análise")
 # LOAD + PROCESS
 # ==========================
 
-
-def mean_edge_weight_per_time(tvg):
-    mean_weights = []
-
-    for G in tvg:
-        weights = [
-            d.get("weight", 1)
-            for _, _, d in G.edges(data=True)
-        ]
-        mean_weights.append(np.mean(weights) if weights else 0)
-
-    return mean_weights
-
-
-
 if run_button:
-
     st.subheader("Carregando EEG")
 
-    raw = mne.io.read_raw_eeglab(eeg_file, preload=True, verbose=False)
+    raw = mne.io.read_raw_eeglab(eeg_file, preload=True, verbose=True)
     # st.write(raw)
     # st.write(raw.info["ch_names"])
 
@@ -70,7 +117,6 @@ if run_button:
     
     eeg = raw.get_data()
     sfreq = raw.info["sfreq"]
-    n_sec = 5
     eeg = eeg[:, :int(n_sec * sfreq)]
     eeg_uv = eeg * 1e6
 
@@ -126,7 +172,7 @@ if run_button:
             x=motifs_flat,
             xbins=dict(
                 start=0.5,
-                end=5.5,
+                end=6.5,
                 size=1
             )
         )
@@ -134,7 +180,7 @@ if run_button:
     fig.update_layout(
         xaxis=dict(
             tickmode="array",
-            tickvals=[1, 2, 3, 4, 5]
+            tickvals=[1, 2, 3, 4, 5, 6]
         ),
         xaxis_title="Motif",
         yaxis_title="Frequência",
@@ -145,18 +191,22 @@ if run_button:
 
     st.plotly_chart(fig, use_container_width=False)
 
+
     # ==========================
     # TVG
     # ==========================
     @st.cache_data(show_spinner=True)
-    def compute_tvg(motifs, window_size, max_lag):
-        return build_tvg(motifs, window_size, max_lag)
-    
-    tvg = compute_tvg(motifs, window_size, max_lag)
+    def compute_tvg(motifs, window_size, max_lag, threshold):
+        return build_tvg_parallel(
+            motifs, window_size, max_lag, threshold=threshold
+        )
+
+    tvg = compute_tvg(motifs, window_size, max_lag, sync_threshold)
 
     st.subheader("Time-Varying Graph (TVG)")
 
     st.write(f"TVG shape: {tvg.shape}")
+    st.write(f"Threshold aplicado: **{sync_threshold:.4f}**")
 
     # Densidade de arestas no tempo
     edges_t = edges_per_time(tvg)
@@ -194,6 +244,8 @@ if run_button:
 
 
     st.plotly_chart(fig, use_container_width=False)
+
+    st.stop()
 
     # ==========================
     # REDE ESTÁTICA AGREGADA
