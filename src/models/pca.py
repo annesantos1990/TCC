@@ -1,16 +1,11 @@
-import pandas as pd
 import numpy as np
-
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-from sklearn.impute import SimpleImputer
-
-
+import pandas as pd
 import plotly.express as px
 import plotly.io as pio
+from sklearn.decomposition import PCA
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
 
-import matplotlib.pyplot as plt
-import seaborn as sns
 pio.templates.default = "plotly_dark"
 
 DATASET_PATH = "data/processed/dataset_features.parquet"
