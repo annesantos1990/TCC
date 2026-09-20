@@ -7,7 +7,7 @@ import pandas as pd
 # ==========================
 PROJECT_ROOT = Path.cwd()
 INTERMEDIATE_DIR = PROJECT_ROOT / "data" / "intermediate"
-METADATA_FILE = PROJECT_ROOT / "data" / "Metadados" / "participants.csv"
+METADATA_FILE = PROJECT_ROOT / "data" / "metadata" / "participants.csv"
 OUTPUT_DIR = PROJECT_ROOT / "data" / "processed"
 OUTPUT_FILE = OUTPUT_DIR / "dataset_features.parquet"
 
@@ -132,6 +132,9 @@ df_analysis = pd.concat(
     [df_healthy, df_meta],
     axis=1
 )
+# padronizar condição para EO
+df_analysis["condition"] = df_analysis["condition"].replace({"E0": "EO"})
+
 print(f"Shape após concatenação: {df_analysis.shape}")
 
 df_analysis.to_parquet(OUTPUT_FILE, index=False)
