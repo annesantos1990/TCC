@@ -13,6 +13,7 @@ from src.graph.aggregate import (
     weighted_degree_static,
     temporal_statistics
 )
+from src.graph.export_networks import save_network_exports
 from src.graph.network import graph_metrics
 
 
@@ -22,32 +23,45 @@ from src.graph.network import graph_metrics
 PROJECT_ROOT = Path.cwd()
 SOURCE_DIR = PROJECT_ROOT / "data" / "preprocessed"
 OUTPUT_DIR = PROJECT_ROOT / "data" / "intermediate"
+NETWORKS_DIR = OUTPUT_DIR / "networks"
 
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+NETWORKS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ==========================
 # PARAMETERS
 # ==========================
-WINDOW_MS = 200
-MAX_LAG_MS = 50
+WINDOW_MS = 100
+MAX_LAG_MS = 25
 N_SEC = 5
 N_SURROGATES = 200
 THRESHOLD_PERCENTILE = 95.0
 
 
 def extract_features(file: Path):
-    """Extrai features de um único arquivo EEG"""
+    """Extrai features de um único arquivo EEG e exporta redes estilo Rosário."""
 
     subject_id, condition = file.stem.split("_")
+    stem = f"{subject_id}_{condition}"
 
-    out_file = OUTPUT_DIR / f"{subject_id}_{condition}.parquet"
-    if out_file.exists():
-        print(f" Pulando {out_file.name} (já existe)")
+    out_file = OUTPUT_DIR / f"{stem}.parquet"
+    nodes_csv = NETWORKS_DIR / f"{stem}_nodes.csv"
+    temporal_csv = NETWORKS_DIR / f"{stem}_temporal.csv"
+    edges_csv = NETWORKS_DIR / f"{stem}_edges.csv"
+
+    if (
+        out_file.exists()
+        and nodes_csv.exists()
+        and temporal_csv.exists()
+        and edges_csv.exists()
+    ):
+        print(f" Pulando {stem} (já existe)")
         return
 
     raw = mne.io.read_raw_eeglab(file, preload=True, verbose=True)
-    raw.pick_types(eeg=True)
+    raw.pick(eeg=True)
+    ch_names = list(raw.ch_names)
 
     eeg = raw.get_data()
     sfreq = raw.info["sfreq"]
@@ -128,6 +142,18 @@ def extract_features(file: Path):
 
     df.to_parquet(out_file, index=False)
     print(f" Salvo: {out_file.name}")
+
+    paths = save_network_exports(
+        tvg=tvg,
+        rea=rea,
+        ch_names=ch_names,
+        networks_dir=NETWORKS_DIR,
+        stem=stem,
+    )
+    print(
+        f" Redes: {paths['nodes'].name}, "
+        f"{paths['temporal'].name}, {paths['edges'].name}"
+    )
 
 files = list(SOURCE_DIR.glob("sub-*.set"))
 len(files), files[:3]
