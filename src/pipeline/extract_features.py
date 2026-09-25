@@ -110,23 +110,23 @@ def extract_features(file: Path):
 
     features = {}
 
-    for i, v in tqdm(enumerate(net["degree"])):
-        features[f"degree_{i}"] = v
+    for i, ch in tqdm(enumerate(ch_names)):
+        features[f"degree_{ch}"] = net["degree"][i]
 
-    for i, v in tqdm(enumerate(net["clustering"])):
-        features[f"clustering_{i}"] = v
+    for i, ch in tqdm(enumerate(ch_names)):
+        features[f"clustering_{ch}"] = net["clustering"][i]
 
-    for i, v in tqdm(enumerate(net["betweenness"])):
-        features[f"betweenness_{i}"] = v
+    for i, ch in tqdm(enumerate(ch_names)):
+        features[f"betweenness_{ch}"] = net["betweenness"][i]
 
-    for i, v in tqdm(enumerate(net["local_efficiency"])):
-        features[f"local_efficiency_{i}"] = v
+    for i, ch in tqdm(enumerate(ch_names)):
+        features[f"local_efficiency_{ch}"] = net["local_efficiency"][i]
 
-    for i, v in tqdm(enumerate(hub_freq)):
-        features[f"hub_frequency_{i}"] = v
+    for i, ch in tqdm(enumerate(ch_names)):
+        features[f"hub_frequency_{ch}"] = hub_freq[i]
 
-    for i, v in tqdm(enumerate(wdeg_static)):
-        features[f"weighted_degree_{i}"] = v
+    for i, ch in tqdm(enumerate(ch_names)):
+        features[f"weighted_degree_{ch}"] = wdeg_static[i]
 
     features["global_efficiency"] = net["global_efficiency"]
     features["sync_threshold"] = threshold

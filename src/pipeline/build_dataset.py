@@ -17,8 +17,20 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # ==========================
 # LOAD DATA
 # ==========================
+# Preferir features alinhadas por eletrodo (degree_Oz, ...), geradas por:
+#   python -m src.pipeline.realign_features_by_electrode
+# que grava data/intermediate_aligned e regenera dataset_features.parquet.
 print("Lendo features intermediárias...")
-files = list(INTERMEDIATE_DIR.glob("sub-*.parquet"))
+ALIGNED_DIR = PROJECT_ROOT / "data" / "intermediate_aligned"
+files = list(ALIGNED_DIR.glob("sub-*.parquet"))
+if not files:
+    files = list(INTERMEDIATE_DIR.glob("sub-*.parquet"))
+    print(
+        "AVISO: intermediate_aligned vazio — usando data/intermediate "
+        "(features podem estar indexadas por posição de canal)."
+    )
+else:
+    print(f"Usando intermediate_aligned ({len(files)} arquivos)")
 print(f"Encontrados {len(files)} arquivos")
 
 dfs = []
