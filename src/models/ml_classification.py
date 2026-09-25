@@ -1,12 +1,17 @@
 """
 Classificação de grupo etário (young vs older) a partir de métricas de rede.
 
+Features de nó alinhadas por eletrodo (ex.: betweenness_Oz), via
+src/pipeline/realign_features_by_electrode.py.
+
 Tarefas:
   - EO: features só olhos abertos
   - EC: features só olhos fechados
   - Diff: EC − EO por sujeito
 
 Modelos: Dummy, LogisticRegression (L2), SVM RBF, Random Forest, KNN+PCA
+
+Permutação (EO, LogReg/SVM): run_eo_permutation — ver notebook 08.
 """
 
 from pathlib import Path
@@ -33,6 +38,12 @@ RANDOM_STATE = 42
 N_SPLITS = 5
 PCA_COMPONENTS = 10
 KNN_NEIGHBORS = 5
+N_PERM = 5000
+CANDIDATE_MODELS = ("LogReg_L2", "SVM_RBF")
+PERM_METRICS = ("roc_auc", "balanced_accuracy")  # principal, complementar
+N_TESTS = 4  # 2 modelos × 2 métricas
+ALPHA = 0.05
+ALPHA_BONF = ALPHA / N_TESTS  # 0.0125
 
 YOUNG_AGES = {"20-25", "25-30", "30-35", "35-40"}
 OLDER_AGES = {"55-60", "60-65", "65-70", "70-75", "75-80"}
@@ -60,6 +71,11 @@ df = pd.read_parquet(DATASET_PATH)
 df = df[df["condition"].isin(["EO", "EC"])].copy()
 df["age"] = df["age"].astype(str)
 
+duplicates = df.duplicated(subset=["subject_id", "condition"], keep=False)
+assert not duplicates.any(), (
+    "Existem registros duplicados por participante e condição."
+)
+
 
 def map_age_group(age: str) -> str | None:
     if age in YOUNG_AGES:
@@ -73,6 +89,11 @@ df["age_group"] = df["age"].map(map_age_group)
 df = df[df["age_group"].notna()].copy()
 df["y"] = df["age_group"].map({"young": 0, "older": 1}).astype(int)
 
+print(
+    "Amostra analítica (após filtro saudável do build_dataset): "
+    f"{df['subject_id'].nunique()} sujeitos "
+    f"(metadados LEMON ~227; intermediários ~158; processados aqui = filtrados)."
+)
 print(df.drop_duplicates("subject_id")["age_group"].value_counts())
 
 FEATURE_COLS = [
@@ -115,7 +136,14 @@ def get_models() -> dict:
             [
                 ("imputer", SimpleImputer(strategy="median")),
                 ("scaler", StandardScaler()),
-                ("clf", LogisticRegression(max_iter=5000, random_state=RANDOM_STATE)),
+                (
+                    "clf",
+                    LogisticRegression(
+                        max_iter=5000,
+                        class_weight="balanced",
+                        random_state=RANDOM_STATE,
+                    ),
+                ),
             ]
         ),
         "SVM_RBF": Pipeline(
@@ -126,6 +154,7 @@ def get_models() -> dict:
                     "clf",
                     SVC(
                         kernel="rbf",
+                        class_weight="balanced",
                         probability=True,
                         random_state=RANDOM_STATE,
                     ),
@@ -139,6 +168,7 @@ def get_models() -> dict:
                     "clf",
                     RandomForestClassifier(
                         n_estimators=300,
+                        class_weight="balanced",
                         random_state=RANDOM_STATE,
                         n_jobs=-1,
                     ),
@@ -188,8 +218,94 @@ def evaluate_all(X: pd.DataFrame, y: pd.Series, models: dict, task: str) -> pd.D
     return pd.DataFrame(rows)
 
 
+def cv_mean_scores(
+    model,
+    X: pd.DataFrame,
+    y: pd.Series,
+    metrics: tuple[str, ...] = PERM_METRICS,
+) -> dict[str, float]:
+    """Média das métricas em StratifiedKFold (mesmo CV do screening)."""
+    cv = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
+    scoring = {m: m for m in metrics}
+    scores = cross_validate(model, X, y, cv=cv, scoring=scoring)
+    return {m: float(np.mean(scores[f"test_{m}"])) for m in metrics}
+
+
+def permutation_test(
+    model,
+    X: pd.DataFrame,
+    y: pd.Series,
+    n_perm: int = N_PERM,
+    metrics: tuple[str, ...] = PERM_METRICS,
+    random_state: int = RANDOM_STATE,
+) -> dict:
+    """
+    Embaralha rótulos etários (features fixas) e compara ao score observado.
+
+    p = (1 + #{null >= observed}) / (N + 1) por métrica.
+    """
+    observed = cv_mean_scores(model, X, y, metrics=metrics)
+    rng = np.random.default_rng(random_state)
+    y_values = np.asarray(y)
+    nulls = {m: np.empty(n_perm, dtype=float) for m in metrics}
+
+    for i in range(n_perm):
+        y_perm = pd.Series(rng.permutation(y_values), index=y.index)
+        null_scores = cv_mean_scores(model, X, y_perm, metrics=metrics)
+        for m in metrics:
+            nulls[m][i] = null_scores[m]
+
+    result = {"observed": observed, "nulls": nulls, "p_values": {}}
+    for m in metrics:
+        obs = observed[m]
+        p = (1 + int(np.sum(nulls[m] >= obs))) / (n_perm + 1)
+        result["p_values"][m] = float(p)
+    return result
+
+
+def run_eo_permutation(
+    X: pd.DataFrame | None = None,
+    y: pd.Series | None = None,
+    n_perm: int = N_PERM,
+) -> pd.DataFrame:
+    """Permutação em EO para LogReg_L2 e SVM_RBF (candidatos do screening)."""
+    if X is None or y is None:
+        X, y = build_feature_matrix(df, "EO")
+
+    all_models = get_models()
+    rows = []
+    null_store = {}
+
+    for name in CANDIDATE_MODELS:
+        print(f"\n=== Permutação EO | {name} | N_PERM={n_perm} ===")
+        out = permutation_test(all_models[name], X, y, n_perm=n_perm)
+        null_store[name] = out["nulls"]
+        for metric in PERM_METRICS:
+            p = out["p_values"][metric]
+            rows.append(
+                {
+                    "task": "EO",
+                    "model": name,
+                    "metric": metric,
+                    "observed": out["observed"][metric],
+                    "p": p,
+                    "alpha_bonf": ALPHA_BONF,
+                    "sig_bonferroni": bool(p < ALPHA_BONF),
+                    "n_perm": n_perm,
+                }
+            )
+            print(
+                f"  {metric}: observed={out['observed'][metric]:.3f} | "
+                f"p={p:.4f} | bonf<{ALPHA_BONF:.4f}? {p < ALPHA_BONF}"
+            )
+
+    summary = pd.DataFrame(rows)
+    summary.attrs["nulls"] = null_store
+    return summary
+
+
 # ==========================
-# TASKS
+# TASKS (screening)
 # ==========================
 models = get_models()
 tasks = {}
@@ -211,3 +327,7 @@ for task, (X, y) in tasks.items():
 df_results = pd.concat(results, ignore_index=True)
 print("\n=== Resumo ===")
 print(df_results.to_string(index=False))
+
+# Teste de permutação EO (candidatos): descomente ou use o notebook 08
+# df_perm = run_eo_permutation(X_eo, y_eo, n_perm=N_PERM)
+# print(df_perm.to_string(index=False))
