@@ -27,26 +27,65 @@ def degree_over_time(tvg: np.ndarray, threshold: float = 0.0) -> np.ndarray:
     return np.sum(tvg > threshold, axis=1)
 
 
+def clustering_over_time(tvg: np.ndarray, threshold: float = 0.0) -> np.ndarray:
+    """
+    Coeficiente de agrupamento binário de cada nó em cada janela.
+
+    Nós com grau < 2 na janela não têm agrupamento definido e ficam NaN.
+
+    Returns
+    -------
+    clustering_t : np.ndarray
+        Array (n_nodes, n_time)
+    """
+    a = np.moveaxis(tvg > threshold, 2, 0).astype(np.float32)
+    closed_walks = np.einsum("tij,tji->ti", a @ a, a)
+    k = a.sum(axis=2)
+    possible = k * (k - 1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        clustering = np.where(possible > 0, closed_walks / possible, np.nan)
+    return clustering.T
+
+
 def hub_occurrence(tvg: np.ndarray, k_sigma: float = 2.0) -> np.ndarray:
     """
-    Frequência (normalizada) com que cada nó atua como hub no tempo.
+    Fração das janelas em que cada nó é hub.
+
+    Em cada janela, um nó é hub quando seu grau passa a média da rede
+    naquela janela + k_sigma desvios padrão (calculados entre os nós).
     """
     degree_t = degree_over_time(tvg)
-    mean_k = np.mean(degree_t, axis=1, keepdims=True)
-    std_k = np.std(degree_t, axis=1, keepdims=True)
+    mean_k = np.mean(degree_t, axis=0, keepdims=True)
+    std_k = np.std(degree_t, axis=0, keepdims=True)
 
     hubs = degree_t > (mean_k + k_sigma * std_k)
-    hub_count = np.sum(hubs, axis=1)
-
-    return hub_count / np.sum(hub_count)
+    return hubs.mean(axis=1)
 
 
-def weighted_degree_static(tvg: np.ndarray) -> np.ndarray:
+def window_node_features(tvg: np.ndarray) -> dict[str, np.ndarray]:
     """
-    Grau ponderado dos nós na rede estática agregada.
+    Resumos por nó das métricas binárias calculadas janela a janela.
+
+    - sd_degree: desvio padrão no tempo do grau normalizado por (N − 1).
+      A média desse grau é igual ao grau da REA normalizado.
+    - bin_clustering: média no tempo do agrupamento binário (janelas com grau < 2 ignoradas).
+    - hub_frequency: fração das janelas em que o nó é hub.
     """
-    rea = aggregate_static_network(tvg)
-    return np.sum(rea, axis=1)
+    n_nodes = tvg.shape[0]
+    degree_t = degree_over_time(tvg) / (n_nodes - 1)
+    clustering_t = clustering_over_time(tvg)
+    with np.errstate(invalid="ignore"):
+        valid = np.isfinite(clustering_t)
+        bin_clustering = np.where(
+            valid.any(axis=1),
+            np.nansum(clustering_t, axis=1) / np.maximum(valid.sum(axis=1), 1),
+            np.nan,
+        )
+    return {
+        "sd_degree": degree_t.std(axis=1),
+        "bin_clustering": bin_clustering,
+        "hub_frequency": hub_occurrence(tvg),
+    }
 
 
 def temporal_statistics(x: np.ndarray) -> dict:

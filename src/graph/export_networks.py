@@ -89,6 +89,19 @@ def build_edges_table(rea: np.ndarray) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["Source", "Target", "Weight", "Type"])
 
 
+def rea_from_exports(nodes_csv: Path, edges_csv: Path) -> tuple[np.ndarray, list[str]]:
+    """Reconstrói a REA ponderada a partir de {stem}_nodes.csv e {stem}_edges.csv."""
+    ch_names = pd.read_csv(nodes_csv)["Elect"].astype(str).str.strip().tolist()
+    edges = pd.read_csv(edges_csv)
+    n = len(ch_names)
+    rea = np.zeros((n, n), dtype=float)
+    i = edges["Source"].to_numpy() - 1
+    j = edges["Target"].to_numpy() - 1
+    rea[i, j] = edges["Weight"].to_numpy()
+    rea[j, i] = edges["Weight"].to_numpy()
+    return rea, ch_names
+
+
 def save_network_exports(
     tvg: np.ndarray,
     rea: np.ndarray,
