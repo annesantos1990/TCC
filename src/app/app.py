@@ -69,20 +69,17 @@ n_sec = st.sidebar.slider("Duração (s)", 1, 30, 5)
 
 st.sidebar.header("Threshold")
 
-n_surrogates = st.sidebar.slider("Surrogates", 50, 1000, 200, 50)
-percentile = st.sidebar.slider("Percentil (%)", 90, 99, 95)
+percentile = st.sidebar.slider("Percentil (%)", 90, 99, 99)
 
-if st.sidebar.button("Estimar threshold (surrogate)"):
-    with st.spinner("Estimando threshold por aleatorização..."):
+if st.sidebar.button("Estimar threshold (série embaralhada)"):
+    with st.spinner("Estimando threshold (tese: shuffle da série + p99)..."):
         eeg_est, sfreq_est, _ = load_eeg_segment(eeg_file, n_sec)
         window_size_est = int(window_ms / 1000 * sfreq_est)
         max_lag_est = int(max_lag_ms / 1000 * sfreq_est)
-        motifs_est = trans_motifs(eeg_est)
         info = estimate_threshold(
-            motifs_est,
+            eeg_est,
             window_size_est,
             max_lag_est,
-            n_surrogates=n_surrogates,
             percentile=float(percentile),
         )
         st.session_state.sync_threshold = info["threshold"]
@@ -93,7 +90,7 @@ if st.session_state.threshold_info:
     st.sidebar.metric("Estimado (surrogate)", f"{info['threshold']:.4f}")
     st.sidebar.caption(
         f"Nulo: μ={info['null_mean']:.4f}, σ={info['null_std']:.4f} "
-        f"(p{info['percentile']:.0f}, n={info['n_surrogates']})"
+        f"(p{info['percentile']:.0f}, arestas={info.get('n_null_edges', info.get('n_surrogates'))})"
     )
 
 sync_threshold = st.sidebar.number_input(

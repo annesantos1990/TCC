@@ -1,74 +1,118 @@
-"""Estimativa de threshold por surrogate (Rosário et al., 2015)."""
+"""Estimativa de threshold por aleatorização da série temporal (critério da tese)."""
+
+from __future__ import annotations
 
 import numpy as np
+from joblib import Parallel, delayed
+from tqdm import tqdm
 
+from .motifs import trans_motifs
 from .sync import motif_sync_pair
 
 
-def estimate_threshold(
+def _window_sync_values(
+    t: int,
     motifs: np.ndarray,
+    n_channels: int,
     window_size: int,
     max_lag: int,
-    n_surrogates: int = 500,
-    percentile: float = 95.0,
+) -> np.ndarray:
+    """Sincronização contínua (sem limiar) para todos os pares em uma janela."""
+    n_pairs = n_channels * (n_channels - 1) // 2
+    vals = np.empty(n_pairs, dtype=np.float64)
+    k = 0
+    for i in range(n_channels):
+        for j in range(i + 1, n_channels):
+            vals[k] = motif_sync_pair(
+                motifs[i, t : t + window_size],
+                motifs[j, t : t + window_size],
+                max_lag,
+            )
+            k += 1
+    return vals
+
+
+def estimate_threshold(
+    eeg: np.ndarray,
+    window_size: int,
+    max_lag: int,
+    percentile: float = 99.0,
+    n_shuffles: int = 1,
     random_state: int | None = 42,
+    n_jobs: int = 4,
 ) -> dict:
     """
-    Estima o threshold de motif-synchronization via aleatorização.
+    Estima o limiar de motif-synchronization pelo critério da tese.
 
-    Para cada surrogate, sorteia um par de canais e uma janela temporal,
-    embaralha os motifs de um canal (destrói sincronização temporal) e
-    calcula a sincronização nula. O threshold é o percentil escolhido
-    dessa distribuição (padrão: 95%, α = 0,05).
+    1. Embaralha independentemente os pontos da série temporal de cada eletrodo
+       (potencial), destruindo a estrutura temporal.
+    2. Converte as séries embaralhadas em motifs.
+    3. Constrói, em cada janela, a sincronização entre todos os pares de canais
+       (como na rede, porém sem binarizar).
+    4. O limiar é o percentil escolhido dessa distribuição de arestas
+       (padrão: 99% → aceita ~1% de sincronizações ao acaso).
 
     Parameters
     ----------
-    motifs : np.ndarray
-        Array (n_channels, n_time) com motifs inteiros.
-    window_size : int
-        Tamanho da janela em amostras.
-    max_lag : int
-        Lag máximo em amostras.
-    n_surrogates : int
-        Número de surrogates gerados.
+    eeg : np.ndarray
+        Sinal contínuo (n_channels, n_samples).
+    window_size, max_lag : int
+        Parâmetros da janela em amostras (iguais aos do TVG).
     percentile : float
-        Percentil da distribuição nula (ex.: 95 → p ≤ 0,05).
+        Percentil da distribuição nula (tese: 99).
+    n_shuffles : int
+        Quantas aleatorizações completas das séries (tese: 1).
+        Valores > 1 acumulam mais arestas nulas para estabilizar o percentil.
     random_state : int, optional
         Semente para reprodutibilidade.
+    n_jobs : int
+        Paralelismo entre janelas.
 
     Returns
     -------
     dict
-        threshold, percentile, null_mean, null_std, n_surrogates, null_syncs
+        threshold, percentile, null_mean, null_std, n_shuffles, n_null_edges
     """
+    if eeg.ndim != 2:
+        raise ValueError("eeg deve ter shape (n_channels, n_samples).")
+
     rng = np.random.default_rng(random_state)
-    n_channels, n_time = motifs.shape
-    window_eff = window_size + max_lag
-    n_windows = n_time - window_eff
+    n_channels, _ = eeg.shape
+    chunks: list[np.ndarray] = []
 
-    if n_windows <= 0:
-        raise ValueError("Sinal curto demais para janela + lag.")
+    for _ in range(n_shuffles):
+        eeg_shuf = eeg.copy()
+        for ch in range(n_channels):
+            rng.shuffle(eeg_shuf[ch])
 
-    null_syncs = np.empty(n_surrogates, dtype=np.float64)
+        motifs = trans_motifs(eeg_shuf)
+        n_time = motifs.shape[1]
+        window_eff = window_size + max_lag
+        n_windows = n_time - window_eff
+        if n_windows <= 0:
+            raise ValueError("Sinal curto demais para janela + lag.")
 
-    for k in range(n_surrogates):
-        i = int(rng.integers(0, n_channels))
-        j = int(rng.integers(0, n_channels))
-        while j == i and n_channels > 1:
-            j = int(rng.integers(0, n_channels))
+        tasks = [
+            delayed(_window_sync_values)(
+                t, motifs, n_channels, window_size, max_lag
+            )
+            for t in range(n_windows)
+        ]
+        results = Parallel(n_jobs=n_jobs)(
+            tqdm(tasks, total=n_windows, desc="Threshold nulo (janelas)", leave=False)
+        )
+        chunks.extend(results)
 
-        t = int(rng.integers(0, n_windows))
-        seg_i = motifs[i, t : t + window_size]
-        seg_j = motifs[j, t : t + window_size].copy()
-        rng.shuffle(seg_j)
-
-        null_syncs[k] = motif_sync_pair(seg_i, seg_j, max_lag)
+    null_syncs = np.concatenate(chunks)
+    threshold = float(np.percentile(null_syncs, percentile))
 
     return {
-        "threshold": float(np.percentile(null_syncs, percentile)),
+        "threshold": threshold,
         "percentile": percentile,
         "null_mean": float(np.mean(null_syncs)),
         "null_std": float(np.std(null_syncs)),
-        "n_surrogates": n_surrogates,
+        "n_shuffles": n_shuffles,
+        "n_null_edges": int(null_syncs.size),
+        "n_surrogates": n_shuffles,
         "null_syncs": null_syncs,
     }
