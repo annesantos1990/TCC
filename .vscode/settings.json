@@ -1,0 +1,33 @@
+{
+    "python.defaultInterpreterPath": "${workspaceFolder}\\venv\\Scripts\\python.exe",
+    "python.terminal.activateEnvironment": true,
+    "jupyter.kernels.excludePythonEnvironments": [
+        "C:\\Users\\Anne\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"
+    ],
+    "files.watcherExclude": {
+        "**/venv/**": true,
+        "**/.venv/**": true,
+        "**/data/**": true,
+        "**/figures/**": true,
+        "**/__pycache__/**": true,
+        "**/.ipynb_checkpoints/**": true,
+        "**/.git/objects/**": true
+    },
+    "search.exclude": {
+        "**/venv": true,
+        "**/.venv": true,
+        "**/data": true,
+        "**/figures": true,
+        "**/.ipynb_checkpoints": true
+    },
+    "python.analysis.exclude": [
+        "**/venv",
+        "**/.venv",
+        "**/data",
+        "**/figures",
+        "**/.ipynb_checkpoints"
+    ],
+    "python.analysis.diagnosticMode": "openFilesOnly",
+    "python.analysis.indexing": false,
+    "jupyter.askForKernelRestart": false
+}
